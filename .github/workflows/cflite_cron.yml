@@ -1,0 +1,69 @@
+name: ClusterFuzzLite cron tasks
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily: refresh the coverage report and prune the corpus.
+    - cron: '0 0 * * *'
+permissions: read-all
+jobs:
+  Coverage:
+    runs-on: ubuntu-latest
+    steps:
+      # Coverage build is disk-heavy (~37GB $OUT: 12 instrumented binaries
+      # 100-336MB each + full source tree + cargo registry for source-level
+      # coverage mapping). GitHub free runners only have ~14GB free → reclaim
+      # ~25-30GB by removing preinstalled toolchains we don't use.
+      - name: Free disk space (coverage build is disk-heavy)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache \
+            /usr/local/lib/android /usr/local/share/boost \
+            /usr/local/lib/node_modules /usr/share/swift /usr/local/.ghcup
+          sudo docker image prune -af 2>/dev/null || true
+          df -h /
+      - name: Build Fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: rust
+          # github-token lets build_fuzzers clone this PRIVATE repo.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: coverage
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/robustfengbin/zebra-fuzz-m2-corpus.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
+      - name: Run Fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          # Coverage is tracked + reported, never used to fail the build.
+          # FFI targets (script_verify / script_flag_matrix) report no Rust
+          # region% by design — sancov does not instrument the C side.
+          mode: coverage
+          sanitizer: coverage
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/robustfengbin/zebra-fuzz-m2-corpus.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
+  Pruning:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: rust
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/robustfengbin/zebra-fuzz-m2-corpus.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
+      - name: Run Fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: prune
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/robustfengbin/zebra-fuzz-m2-corpus.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages

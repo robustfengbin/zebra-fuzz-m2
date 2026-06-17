@@ -1,0 +1,44 @@
+name: ClusterFuzzLite PR fuzzing
+on:
+  pull_request:
+    paths:
+      - '**'
+permissions: read-all
+jobs:
+  PR:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer:
+          - address
+    steps:
+      - name: Build Fuzzers (${{ matrix.sanitizer }})
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: rust
+          # github-token lets build_fuzzers clone this PRIVATE repo.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: ${{ matrix.sanitizer }}
+          # Reuse the last batch run's corpus to find regressions faster.
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/robustfengbin/zebra-fuzz-m2-corpus.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
+      - name: Run Fuzzers (${{ matrix.sanitizer }})
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Short smoke fuzz on the code touched by the PR. Crash detection
+          # only — coverage is NOT gated here (see cflite_cron.yml).
+          fuzz-seconds: 600
+          mode: code-change
+          sanitizer: ${{ matrix.sanitizer }}
+          output-sarif: true
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/robustfengbin/zebra-fuzz-m2-corpus.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages

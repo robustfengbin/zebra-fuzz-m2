@@ -1,0 +1,39 @@
+name: ClusterFuzzLite batch fuzzing
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 6 hours. Accumulates corpus into the storage repo so PR and
+    # coverage runs start warm.
+    - cron: '0 0/6 * * *'
+permissions: read-all
+jobs:
+  BatchFuzzing:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer:
+          - address
+    steps:
+      - name: Build Fuzzers (${{ matrix.sanitizer }})
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: rust
+          # github-token lets build_fuzzers clone this PRIVATE repo.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: ${{ matrix.sanitizer }}
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/robustfengbin/zebra-fuzz-m2-corpus.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
+      - name: Run Fuzzers (${{ matrix.sanitizer }})
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 3600
+          mode: batch
+          sanitizer: ${{ matrix.sanitizer }}
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/robustfengbin/zebra-fuzz-m2-corpus.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
